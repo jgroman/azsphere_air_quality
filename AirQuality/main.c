@@ -26,6 +26,9 @@
 // "Target Hardware Definition Directory"
 #include <hw/project_hardware.h>
 
+// Using a single-thread event loop pattern based on Epoll and timerfd
+#include "epoll_timerfd_utilities.h"
+
 #include "LibCcs811.h"
 #include "LibHdc1000.h"
 #include "LibOledSsd1306.h"
@@ -44,6 +47,12 @@
  */
 static void
 termination_handler(int signal_number);
+
+/**
+ *
+ */
+static void
+button_timer_event_handler(EventData *event_data);
 
 /** @brief Initialize signal handlers.
  *
@@ -75,9 +84,15 @@ close_peripherals_and_handlers(void);
 
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
-static int i2c_fd = -1;     // I2C file descriptor
-static hdc1000_t *p_hdc;    // HDC1000 sensor data pointer
-static ccs811_t *p_ccs;     // CCS811 sensor data pointer
+static int i2c_fd = -1;                     // I2C file descriptor
+static int epoll_fd = -1;                   // Epoll file descriptor
+static int button_poll_timer_fd = -1;
+static int button1_gpio_fd = -1;
+static hdc1000_t *p_hdc;                    // HDC1000 sensor data pointer
+static ccs811_t *p_ccs;                     // CCS811 sensor data pointer
+
+static GPIO_Value_Type button1_state = GPIO_Value_High;
+
 
 /*******************************************************************************
 * Function definitions
@@ -101,6 +116,16 @@ main(void)
     {
         // Main application
 
+        Log_Debug("Waiting for event\n");
+        while (!gb_is_termination_requested)
+        {
+            if (WaitForEventAndCallHandler(epoll_fd) != 0) 
+            {
+                gb_is_termination_requested = true;
+            }
+        }
+        Log_Debug("Not waiting for event\n");
+
         struct timespec sleepTime;
         sleepTime.tv_sec = 1;
         sleepTime.tv_nsec = 0;
@@ -109,7 +134,7 @@ main(void)
         uint16_t tvoc;
         uint16_t eco2;
 
-        ccs811_set_mode(p_ccs, CCS811_MODE_1S);
+        ccs811_set_mode(p_ccs, CCS811_MODE_10S);
         nanosleep(&sleepTime, NULL);
 
         for (int meas = 0; meas < 300; meas++)
@@ -149,6 +174,43 @@ termination_handler(int signal_number)
     gb_is_termination_requested = true;
 }
 
+static void
+button_timer_event_handler(EventData *event_data)
+{
+    // Consume timer event
+    if (ConsumeTimerFdEvent(button_poll_timer_fd) != 0) {
+        Log_Debug("Cannot consume time event.\n");
+        gb_is_termination_requested = true;
+        return;
+    }
+
+    // Check for a button press
+    GPIO_Value_Type new_button1_state;
+    int result = GPIO_GetValue(button1_gpio_fd, &new_button1_state);
+    if (result != 0) {
+        Log_Debug("ERROR: Could not read button GPIO: %s (%d).\n", 
+            strerror(errno), errno);
+        gb_is_termination_requested = true;
+        return;
+    }
+
+    if (new_button1_state != button1_state)
+    {
+        if (new_button1_state == GPIO_Value_Low)
+        {
+            Log_Debug("Button1 pressed.\n");
+        }
+        button1_state = new_button1_state;
+    }
+
+}
+
+// Event handler data. Only the event handler field needs to be populated.
+static EventData button_event_data = {
+    .eventHandler = &button_timer_event_handler
+};
+
+
 static int
 init_handlers(void)
 {
@@ -163,6 +225,11 @@ init_handlers(void)
     if (result != 0) {
         Log_Debug("ERROR: %s - sigaction: errno=%d (%s)\n", 
             __FUNCTION__, errno, strerror(errno));
+    }
+
+    epoll_fd = CreateEpollFd();
+    if (epoll_fd < 0) {
+        result = -1;
     }
 
     return result;
@@ -221,7 +288,31 @@ init_peripherals(I2C_InterfaceId isu_id)
 
     // Initialize 128x64 OLED
 
-    // Initialize development kit buttons
+    // Initialize development kit button GPIO
+    // Open button GPIO as input
+    if (result != -1)
+    {
+        Log_Debug("Opening PROJECT_BUTTON_1 as input.\n");
+        button1_gpio_fd = GPIO_OpenAsInput(PROJECT_BUTTON_1);
+        if (button1_gpio_fd < 0) {
+            Log_Debug("ERROR: Could not open button GPIO: %s (%d).\n",
+                strerror(errno), errno);
+            result = -1;
+        }
+    }
+
+    // Create timer for button press check
+    if (result != -1)
+    {
+        struct timespec button_press_check_period = { 0, 1000000 };
+        button_poll_timer_fd = CreateTimerFdAndAddToEpoll(epoll_fd,
+            &button_press_check_period, &button_event_data, EPOLLIN);
+        if (button_poll_timer_fd < 0)
+        {
+            result = -1;
+        }
+
+    }
 
     return result;
 }
@@ -249,6 +340,12 @@ close_peripherals_and_handlers(void)
     {
         close(i2c_fd);
     }
+
+    // Close button1 GPIO
+    CloseFdAndPrintError(button1_gpio_fd, "Button1 GPIO");
+
+    // Close Epoll
+    CloseFdAndPrintError(epoll_fd, "Epoll");
 }
 
 /* [] END OF FILE */
