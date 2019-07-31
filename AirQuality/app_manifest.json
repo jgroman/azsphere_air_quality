@@ -1,0 +1,26 @@
+{
+  "SchemaVersion": 1,
+  "Name" : "AirQuality",
+  "ComponentId" : "7dd18039-4d49-47da-bcc8-0dc1195721bb",
+  "EntryPoint": "/bin/app",
+  "CmdArgs": [],
+    "Capabilities": {
+        "AllowedConnections": [],
+        "Gpio": [
+            "$PROJECT_BUTTON_1",
+            "$PROJECT_BUTTON_2",
+            "$PROJECT_RGBLED_RED",
+            "$PROJECT_RGBLED_GREEN",
+            "$PROJECT_RGBLED_BLUE",
+            "$PROJECT_SOCKET12_INT",
+            "$PROJECT_SOCKET1_CS",
+            "$PROJECT_SOCKET1_RST"
+        ],
+        "I2cMaster": [
+            "$PROJECT_ISU2_I2C"
+        ],
+        "Uart": [],
+        "WifiConfig": false
+    },
+  "ApplicationType":"Default"
+}

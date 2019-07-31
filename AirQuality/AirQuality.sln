@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.757
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AirQuality", "AirQuality.vcxproj", "{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LibCcs811", "..\..\sphere_lib_ccs811\LibCcs811\LibCcs811.vcxproj", "{5A4234AB-9A7F-4B2D-A1DC-168C4CCC8553}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LibHdc1000", "..\..\sphere_lib_hdc1000\LibHdc1000\LibHdc1000.vcxproj", "{96EA0645-1BC5-448D-BFC5-01291AB70253}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LibOledSsd1306", "..\..\sphere_lib_oled_ssd1306\LibOledSsd1306\LibOledSsd1306.vcxproj", "{735D9491-892C-4D08-87E8-EFA2174D8774}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM = Debug|ARM
+		Release|ARM = Release|ARM
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Debug|ARM.ActiveCfg = Debug|ARM
+		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Debug|ARM.Build.0 = Debug|ARM
+		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Release|ARM.ActiveCfg = Release|ARM
+		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Release|ARM.Build.0 = Release|ARM
+		{5A4234AB-9A7F-4B2D-A1DC-168C4CCC8553}.Debug|ARM.ActiveCfg = Debug|ARM
+		{5A4234AB-9A7F-4B2D-A1DC-168C4CCC8553}.Debug|ARM.Build.0 = Debug|ARM
+		{5A4234AB-9A7F-4B2D-A1DC-168C4CCC8553}.Release|ARM.ActiveCfg = Release|ARM
+		{5A4234AB-9A7F-4B2D-A1DC-168C4CCC8553}.Release|ARM.Build.0 = Release|ARM
+		{96EA0645-1BC5-448D-BFC5-01291AB70253}.Debug|ARM.ActiveCfg = Debug|ARM
+		{96EA0645-1BC5-448D-BFC5-01291AB70253}.Debug|ARM.Build.0 = Debug|ARM
+		{96EA0645-1BC5-448D-BFC5-01291AB70253}.Release|ARM.ActiveCfg = Release|ARM
+		{96EA0645-1BC5-448D-BFC5-01291AB70253}.Release|ARM.Build.0 = Release|ARM
+		{735D9491-892C-4D08-87E8-EFA2174D8774}.Debug|ARM.ActiveCfg = Debug|ARM
+		{735D9491-892C-4D08-87E8-EFA2174D8774}.Debug|ARM.Build.0 = Debug|ARM
+		{735D9491-892C-4D08-87E8-EFA2174D8774}.Release|ARM.ActiveCfg = Release|ARM
+		{735D9491-892C-4D08-87E8-EFA2174D8774}.Release|ARM.Build.0 = Release|ARM
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FABA49C4-79C2-4C81-8C6A-229A9D540A14}
+	EndGlobalSection
+EndGlobal
