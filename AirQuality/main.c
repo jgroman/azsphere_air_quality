@@ -93,6 +93,10 @@ static ccs811_t *p_ccs;                     // CCS811 sensor data pointer
 
 static GPIO_Value_Type button1_state = GPIO_Value_High;
 
+// Event handler data. Only the event handler field needs to be populated.
+static EventData button_event_data = {
+    .eventHandler = &button_timer_event_handler
+};
 
 /*******************************************************************************
 * Function definitions
@@ -179,7 +183,6 @@ button_timer_event_handler(EventData *event_data)
 {
     // Consume timer event
     if (ConsumeTimerFdEvent(button_poll_timer_fd) != 0) {
-        Log_Debug("Cannot consume time event.\n");
         gb_is_termination_requested = true;
         return;
     }
@@ -204,12 +207,6 @@ button_timer_event_handler(EventData *event_data)
     }
 
 }
-
-// Event handler data. Only the event handler field needs to be populated.
-static EventData button_event_data = {
-    .eventHandler = &button_timer_event_handler
-};
-
 
 static int
 init_handlers(void)
@@ -266,22 +263,28 @@ init_peripherals(I2C_InterfaceId isu_id)
 
     // Initialize HDC1000 Click board
     // Using default sensor I2C address and not using DRDYn signal
-    Log_Debug("Init HDC1000\n");
-    p_hdc = hdc1000_open(i2c_fd, HDC1000_I2C_ADDR, -1);
-    if (!p_hdc)
+    if (result != -1)
     {
-        Log_Debug("ERROR: Cannot initialize HDC1000 sensor.\n");
-        result = -1;
+        Log_Debug("Init HDC1000\n");
+        p_hdc = hdc1000_open(i2c_fd, HDC1000_I2C_ADDR, -1);
+        if (!p_hdc)
+        {
+            Log_Debug("ERROR: Cannot initialize HDC1000 sensor.\n");
+            result = -1;
+        }
     }
 
     // Initialize Air Quality 3 Click board (CCS811 sensor)
     // Using default sensor I2C address and Socket1 signals
-    Log_Debug("Init CCS811\n");
-    p_ccs = ccs811_open(i2c_fd, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
-    if (!p_ccs)
+    if (result != -1)
     {
-        Log_Debug("ERROR: Cannot initialize CCS811 sensor.\n");
-        result = -1;
+        Log_Debug("Init CCS811\n");
+        p_ccs = ccs811_open(i2c_fd, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
+        if (!p_ccs)
+        {
+            Log_Debug("ERROR: Cannot initialize CCS811 sensor.\n");
+            result = -1;
+        }
     }
 
     // Initialize Air Quality 3 Click board interrupt GPIO
@@ -335,16 +338,12 @@ close_peripherals_and_handlers(void)
     }
 
     // Close I2C
-    Log_Debug("Close I2C\n");
-    if (i2c_fd > 0)
-    {
-        close(i2c_fd);
-    }
+    CloseFdAndPrintError(i2c_fd, "I2C");
 
-    // Close button1 GPIO
+    // Close button1 GPIO fd
     CloseFdAndPrintError(button1_gpio_fd, "Button1 GPIO");
 
-    // Close Epoll
+    // Close Epoll fd
     CloseFdAndPrintError(epoll_fd, "Epoll");
 }
 
