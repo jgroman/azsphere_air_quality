@@ -89,6 +89,8 @@ close_peripherals_and_handlers(void);
 * Global variables
 *******************************************************************************/
 
+#define OLED_LINE_LENGTH    16
+
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
 static int i2c_fd = -1;                     
@@ -110,8 +112,9 @@ static EventData ccs811_int_event_data = {
 
 static hdc1000_t *p_hdc;                    // HDC1000 sensor data pointer
 static ccs811_t *p_ccs;                     // CCS811 sensor data pointer
+static u8x8_t u8x8;                         // OLED control structure
 
-
+static char print_buffer[OLED_LINE_LENGTH + 1];
 
 /*******************************************************************************
 * Function definitions
@@ -131,6 +134,16 @@ main(void)
         }
     }
 
+    // Setup OLED
+    u8x8_InitDisplay(&u8x8);
+    u8x8_SetPowerSave(&u8x8, 0);
+    u8x8_ClearDisplay(&u8x8);
+    u8x8_SetFont(&u8x8, u8x8_font_amstrad_cpc_extended_f);
+
+    snprintf(print_buffer, 16, " ... STARTING ...");
+    u8x8_DrawString(&u8x8, 0, 0, print_buffer);
+
+
     if (!gb_is_termination_requested) 
     {
         // Main application
@@ -148,6 +161,8 @@ main(void)
         }
         Log_Debug("Not waiting for event anymore\n");
     }
+
+    u8x8_ClearDisplay(&u8x8);
 
     close_peripherals_and_handlers();
 }
@@ -242,6 +257,16 @@ ccs811_int_timer_event_handler(EventData *event_data)
                     Log_Debug("CCS811 Sensor interrupt: TVOC %d ppb, eCO2 %d ppm\n",
                         tvoc, eco2);
 
+                    // Output data on OLED
+                    snprintf(print_buffer, 16, "Tmp: %.1f C         ", temperature);
+                    u8x8_DrawString(&u8x8, 0, 0, print_buffer);
+                    snprintf(print_buffer, 16, "Hum: %.1f RH         ", humidity);
+                    u8x8_DrawString(&u8x8, 0, 2, print_buffer);
+                    snprintf(print_buffer, 16, "eCO2: %d ppm         ", eco2);
+                    u8x8_DrawString(&u8x8, 0, 4, print_buffer);
+                    snprintf(print_buffer, 16, "TVOC: %d ppb         ", tvoc);
+                    u8x8_DrawString(&u8x8, 0, 6, print_buffer);
+
                 }
                 else
                 {
@@ -335,8 +360,26 @@ init_peripherals(I2C_InterfaceId isu_id)
     }
 
     // Initialize Air Quality 3 Click board interrupt GPIO
+    // Set development kit Socket 1 & 2 INT pin as Input
+    if (result != -1)
+    {
+        Log_Debug("Opening PROJECT_SOCKET12_INT as input.\n");
+        ccs811_int_gpio_fd = GPIO_OpenAsInput(PROJECT_SOCKET12_INT);
+        if (ccs811_int_gpio_fd < 0) {
+            Log_Debug("ERROR: Could not open GPIO: %s (%d).\n",
+                strerror(errno), errno);
+            result = -1;
+        }
+    }
 
     // Initialize 128x64 OLED
+    if (result != -1)
+    {
+        u8x8_Setup(&u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c, 
+            u8x8_byte_i2c, mt3620_gpio_and_delay_cb);
+        u8x8_SetI2CAddress(&u8x8, 0x3C);
+        set_oled_i2c_fd(i2c_fd);
+    }
 
     // Initialize development kit button GPIO
     // Open button 1 GPIO as input
@@ -346,18 +389,6 @@ init_peripherals(I2C_InterfaceId isu_id)
         button1_gpio_fd = GPIO_OpenAsInput(PROJECT_BUTTON_1);
         if (button1_gpio_fd < 0) {
             Log_Debug("ERROR: Could not open button GPIO: %s (%d).\n",
-                strerror(errno), errno);
-            result = -1;
-        }
-    }
-
-    // Initialize development kit Socket 1 & 2 INT pin as Input
-    if (result != -1)
-    {
-        Log_Debug("Opening PROJECT_SOCKET12_INT as input.\n");
-        ccs811_int_gpio_fd = GPIO_OpenAsInput(PROJECT_SOCKET12_INT);
-        if (ccs811_int_gpio_fd < 0) {
-            Log_Debug("ERROR: Could not open GPIO: %s (%d).\n",
                 strerror(errno), errno);
             result = -1;
         }
