@@ -48,11 +48,18 @@
 static void
 termination_handler(int signal_number);
 
-/**
+/** @brief Timer event handler for polling button states
  *
  */
 static void
 button_timer_event_handler(EventData *event_data);
+
+/** @brief Timer event handler for polling CCS811 interrupt pin
+ *
+ */
+static void
+ccs811_int_timer_event_handler(EventData *event_data);
+
 
 /** @brief Initialize signal handlers.
  *
@@ -84,19 +91,27 @@ close_peripherals_and_handlers(void);
 
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
-static int i2c_fd = -1;                     // I2C file descriptor
-static int epoll_fd = -1;                   // Epoll file descriptor
+static int i2c_fd = -1;                     
+static int epoll_fd = -1;
+
 static int button_poll_timer_fd = -1;
 static int button1_gpio_fd = -1;
+static GPIO_Value_Type button1_state = GPIO_Value_High;
+static EventData button_event_data = {          // Event handler data
+    .eventHandler = &button_timer_event_handler // Populate only this field
+};
+
+static int ccs811_int_poll_timer_fd = -1;
+static int ccs811_int_gpio_fd = -1;
+static GPIO_Value_Type ccs811_int_state = GPIO_Value_High;
+static EventData ccs811_int_event_data = {
+    .eventHandler = &ccs811_int_timer_event_handler
+};
+
 static hdc1000_t *p_hdc;                    // HDC1000 sensor data pointer
 static ccs811_t *p_ccs;                     // CCS811 sensor data pointer
 
-static GPIO_Value_Type button1_state = GPIO_Value_High;
 
-// Event handler data. Only the event handler field needs to be populated.
-static EventData button_event_data = {
-    .eventHandler = &button_timer_event_handler
-};
 
 /*******************************************************************************
 * Function definitions
@@ -120,6 +135,9 @@ main(void)
     {
         // Main application
 
+        ccs811_set_mode(p_ccs, CCS811_MODE_10S);
+        ccs811_enable_interrupt(p_ccs, true);
+
         Log_Debug("Waiting for event\n");
         while (!gb_is_termination_requested)
         {
@@ -128,41 +146,7 @@ main(void)
                 gb_is_termination_requested = true;
             }
         }
-        Log_Debug("Not waiting for event\n");
-
-        struct timespec sleepTime;
-        sleepTime.tv_sec = 1;
-        sleepTime.tv_nsec = 0;
-
-        double ddata;
-        uint16_t tvoc;
-        uint16_t eco2;
-
-        ccs811_set_mode(p_ccs, CCS811_MODE_10S);
-        nanosleep(&sleepTime, NULL);
-
-        for (int meas = 0; meas < 300; meas++)
-        {
-            // HDC1000
-            ddata = hdc1000_get_temp(p_hdc);
-            Log_Debug("Temperature [degC]: %f\n", ddata);
-
-            ddata = hdc1000_get_humi(p_hdc);
-            Log_Debug("Humidity [percRH]: %f\n", ddata);
-
-            // CCS811
-            if (ccs811_get_results(p_ccs, &tvoc, &eco2, 0, 0)) {
-                Log_Debug("CCS811 Sensor periodic: TVOC %d ppb, eCO2 %d ppm\n",
-                    tvoc, eco2);
-            }
-            else
-            {
-                Log_Debug("No results\n");
-            }
-
-            nanosleep(&sleepTime, NULL);
-        }
-
+        Log_Debug("Not waiting for event anymore\n");
     }
 
     close_peripherals_and_handlers();
@@ -202,8 +186,71 @@ button_timer_event_handler(EventData *event_data)
         if (new_button1_state == GPIO_Value_Low)
         {
             Log_Debug("Button1 pressed.\n");
+            gb_is_termination_requested = true;
         }
         button1_state = new_button1_state;
+    }
+}
+
+static void
+ccs811_int_timer_event_handler(EventData *event_data)
+{
+    // Consume timer event
+    if (ConsumeTimerFdEvent(ccs811_int_poll_timer_fd) != 0) {
+        gb_is_termination_requested = true;
+        return;
+    }
+
+    // Check for interrupt signal state change
+    GPIO_Value_Type new_ccs811_int_state;
+
+    int result = GPIO_GetValue(ccs811_int_gpio_fd, &new_ccs811_int_state);
+    if (result != 0) {
+        Log_Debug("ERROR: Could not read CCS811 interrupt GPIO: %s (%d).\n",
+            strerror(errno), errno);
+        gb_is_termination_requested = true;
+        return;
+    }
+
+    if (new_ccs811_int_state != ccs811_int_state)
+    {
+        if (new_ccs811_int_state == GPIO_Value_Low)
+        {
+            // CCS811 /INT pin is asserted. New measurement is available.
+            // Reading CCS811 result will reset /INT pin.
+
+            double temperature;
+            double humidity;
+
+            // Read temperature and humidity from HDC1000
+            temperature = hdc1000_get_temp(p_hdc);
+            humidity = hdc1000_get_humi(p_hdc);
+
+            Log_Debug("Temperature [degC]: %f, Humidity [percRH]: %f\n",
+                temperature, humidity);
+
+            // Feed environmental data to CCS811
+            bool set_result = ccs811_set_environmental_data(p_ccs, 
+                (float)temperature, (float)humidity);
+
+            if (set_result)
+            {
+                uint16_t tvoc;
+                uint16_t eco2;
+
+                if (ccs811_get_results(p_ccs, &tvoc, &eco2, 0, 0)) {
+                    Log_Debug("CCS811 Sensor interrupt: TVOC %d ppb, eCO2 %d ppm\n",
+                        tvoc, eco2);
+
+                }
+                else
+                {
+                    Log_Debug("Could not read measurement from CCS811.\n");
+                    gb_is_termination_requested = true;
+                }
+            }
+        }
+        ccs811_int_state = new_ccs811_int_state;
     }
 
 }
@@ -262,7 +309,7 @@ init_peripherals(I2C_InterfaceId isu_id)
     }
 
     // Initialize HDC1000 Click board
-    // Using default sensor I2C address and not using DRDYn signal
+    // Default sensor I2C address, not using DRDYn signal
     if (result != -1)
     {
         Log_Debug("Init HDC1000\n");
@@ -275,7 +322,7 @@ init_peripherals(I2C_InterfaceId isu_id)
     }
 
     // Initialize Air Quality 3 Click board (CCS811 sensor)
-    // Using default sensor I2C address and Socket1 signals
+    // Default sensor I2C address, located in  Socket1
     if (result != -1)
     {
         Log_Debug("Init CCS811\n");
@@ -292,13 +339,25 @@ init_peripherals(I2C_InterfaceId isu_id)
     // Initialize 128x64 OLED
 
     // Initialize development kit button GPIO
-    // Open button GPIO as input
+    // Open button 1 GPIO as input
     if (result != -1)
     {
         Log_Debug("Opening PROJECT_BUTTON_1 as input.\n");
         button1_gpio_fd = GPIO_OpenAsInput(PROJECT_BUTTON_1);
         if (button1_gpio_fd < 0) {
             Log_Debug("ERROR: Could not open button GPIO: %s (%d).\n",
+                strerror(errno), errno);
+            result = -1;
+        }
+    }
+
+    // Initialize development kit Socket 1 & 2 INT pin as Input
+    if (result != -1)
+    {
+        Log_Debug("Opening PROJECT_SOCKET12_INT as input.\n");
+        ccs811_int_gpio_fd = GPIO_OpenAsInput(PROJECT_SOCKET12_INT);
+        if (ccs811_int_gpio_fd < 0) {
+            Log_Debug("ERROR: Could not open GPIO: %s (%d).\n",
                 strerror(errno), errno);
             result = -1;
         }
@@ -312,9 +371,24 @@ init_peripherals(I2C_InterfaceId isu_id)
             &button_press_check_period, &button_event_data, EPOLLIN);
         if (button_poll_timer_fd < 0)
         {
+            Log_Debug("ERROR: Could not create button poll timer: %s (%d).\n",
+                strerror(errno), errno);
             result = -1;
         }
+    }
 
+    // Create timer for CCS811 interrupt signal check
+    if (result != -1)
+    {
+        struct timespec ccs811_int_check_period = { 0, 250000000 };
+        ccs811_int_poll_timer_fd = CreateTimerFdAndAddToEpoll(epoll_fd,
+            &ccs811_int_check_period, &ccs811_int_event_data, EPOLLIN);
+        if (ccs811_int_poll_timer_fd < 0)
+        {
+            Log_Debug("ERROR: Could not create interrupt poll timer: %s (%d).\n",
+                strerror(errno), errno);
+            result = -1;
+        }
     }
 
     return result;
@@ -339,6 +413,9 @@ close_peripherals_and_handlers(void)
 
     // Close I2C
     CloseFdAndPrintError(i2c_fd, "I2C");
+
+    // Close CCS811 interrupt GPIO fd
+    CloseFdAndPrintError(ccs811_int_gpio_fd, "CSS811 INT GPIO");
 
     // Close button1 GPIO fd
     CloseFdAndPrintError(button1_gpio_fd, "Button1 GPIO");
