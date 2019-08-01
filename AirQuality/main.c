@@ -48,6 +48,15 @@
 static void
 termination_handler(int signal_number);
 
+/** @brief Button1 press handler
+ *
+ */
+static void
+button1_press_handler(void);
+
+static void
+ccs811_interrupt_handler(void);
+
 /** @brief Timer event handler for polling button states
  *
  */
@@ -140,7 +149,7 @@ main(void)
     u8x8_ClearDisplay(&u8x8);
     u8x8_SetFont(&u8x8, u8x8_font_amstrad_cpc_extended_f);
 
-    snprintf(print_buffer, 16, " ... STARTING ...");
+    snprintf(print_buffer, 16, ".. STARTING ..");
     u8x8_DrawString(&u8x8, 0, 0, print_buffer);
 
 
@@ -172,6 +181,59 @@ main(void)
 *******************************************************************************/
 
 static void
+button1_press_handler(void)
+{
+    Log_Debug("Button1 pressed.\n");
+    gb_is_termination_requested = true;
+}
+
+static void
+ccs811_interrupt_handler(void)
+{
+    double temperature;
+    double humidity;
+
+    // Read temperature and humidity from HDC1000
+    temperature = hdc1000_get_temp(p_hdc);
+    humidity = hdc1000_get_humi(p_hdc);
+
+    Log_Debug("Temperature [degC]: %f, Humidity [percRH]: %f\n",
+        temperature, humidity);
+
+    // Feed environmental data to CCS811
+    bool set_result = ccs811_set_environmental_data(p_ccs,
+        (float)temperature, (float)humidity);
+
+    if (set_result)
+    {
+        uint16_t tvoc;
+        uint16_t eco2;
+
+        // Reading CCS811 result will reset /INT pin.
+        if (!ccs811_get_results(p_ccs, &tvoc, &eco2, 0, 0)) 
+        {
+            Log_Debug("Could not read measurement from CCS811.\n");
+            gb_is_termination_requested = true;
+        }
+        else
+        {
+            Log_Debug("CCS811 Sensor interrupt: TVOC %d ppb, eCO2 %d ppm\n",
+                tvoc, eco2);
+
+            // Output data on OLED
+            snprintf(print_buffer, 16, "Tmp: %.1f C         ", temperature);
+            u8x8_DrawString(&u8x8, 0, 0, print_buffer);
+            snprintf(print_buffer, 16, "Hum: %.1f RH         ", humidity);
+            u8x8_DrawString(&u8x8, 0, 2, print_buffer);
+            snprintf(print_buffer, 16, "eCO2: %d ppm         ", eco2);
+            u8x8_DrawString(&u8x8, 0, 4, print_buffer);
+            snprintf(print_buffer, 16, "TVOC: %d ppb         ", tvoc);
+            u8x8_DrawString(&u8x8, 0, 6, print_buffer);
+        }
+    }
+}
+
+static void
 termination_handler(int signal_number)
 {
     gb_is_termination_requested = true;
@@ -200,8 +262,7 @@ button_timer_event_handler(EventData *event_data)
     {
         if (new_button1_state == GPIO_Value_Low)
         {
-            Log_Debug("Button1 pressed.\n");
-            gb_is_termination_requested = true;
+            button1_press_handler();
         }
         button1_state = new_button1_state;
     }
@@ -232,48 +293,7 @@ ccs811_int_timer_event_handler(EventData *event_data)
         if (new_ccs811_int_state == GPIO_Value_Low)
         {
             // CCS811 /INT pin is asserted. New measurement is available.
-            // Reading CCS811 result will reset /INT pin.
-
-            double temperature;
-            double humidity;
-
-            // Read temperature and humidity from HDC1000
-            temperature = hdc1000_get_temp(p_hdc);
-            humidity = hdc1000_get_humi(p_hdc);
-
-            Log_Debug("Temperature [degC]: %f, Humidity [percRH]: %f\n",
-                temperature, humidity);
-
-            // Feed environmental data to CCS811
-            bool set_result = ccs811_set_environmental_data(p_ccs, 
-                (float)temperature, (float)humidity);
-
-            if (set_result)
-            {
-                uint16_t tvoc;
-                uint16_t eco2;
-
-                if (ccs811_get_results(p_ccs, &tvoc, &eco2, 0, 0)) {
-                    Log_Debug("CCS811 Sensor interrupt: TVOC %d ppb, eCO2 %d ppm\n",
-                        tvoc, eco2);
-
-                    // Output data on OLED
-                    snprintf(print_buffer, 16, "Tmp: %.1f C         ", temperature);
-                    u8x8_DrawString(&u8x8, 0, 0, print_buffer);
-                    snprintf(print_buffer, 16, "Hum: %.1f RH         ", humidity);
-                    u8x8_DrawString(&u8x8, 0, 2, print_buffer);
-                    snprintf(print_buffer, 16, "eCO2: %d ppm         ", eco2);
-                    u8x8_DrawString(&u8x8, 0, 4, print_buffer);
-                    snprintf(print_buffer, 16, "TVOC: %d ppb         ", tvoc);
-                    u8x8_DrawString(&u8x8, 0, 6, print_buffer);
-
-                }
-                else
-                {
-                    Log_Debug("Could not read measurement from CCS811.\n");
-                    gb_is_termination_requested = true;
-                }
-            }
+            ccs811_interrupt_handler();
         }
         ccs811_int_state = new_ccs811_int_state;
     }
