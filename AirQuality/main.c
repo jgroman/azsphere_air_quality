@@ -98,8 +98,6 @@ close_peripherals_and_handlers(void);
 * Global variables
 *******************************************************************************/
 
-#define OLED_LINE_LENGTH    16
-
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
 static int i2c_fd = -1;                     
@@ -119,11 +117,12 @@ static EventData ccs811_int_event_data = {
     .eventHandler = &ccs811_int_timer_event_handler
 };
 
-static hdc1000_t *p_hdc;                    // HDC1000 sensor data pointer
-static ccs811_t *p_ccs;                     // CCS811 sensor data pointer
-static u8x8_t u8x8;                         // OLED control structure
+static hdc1000_t *gp_hdc;                   // HDC1000 sensor data pointer
+static ccs811_t *gp_ccs;                    // CCS811 sensor data pointer
+static u8x8_t *gp_u8x8;                     // OLED control structure
 
-static char print_buffer[OLED_LINE_LENGTH + 1];
+#define OLED_LINE_LENGTH    16
+static char g_print_buffer[OLED_LINE_LENGTH + 1];
 
 /*******************************************************************************
 * Function definitions
@@ -132,38 +131,49 @@ static char print_buffer[OLED_LINE_LENGTH + 1];
 int 
 main(void)
 {
-    gb_is_termination_requested = true;
+    gb_is_termination_requested = false;
 
-    if (init_handlers() == 0)
-    {
-        if (init_peripherals(PROJECT_ISU2_I2C) == 0) 
-        {
-            // Handlers and peripherals are initialized
-            gb_is_termination_requested = false;
-        }
-    }
+	// Initialize handlers
+	if (init_handlers() != 0)
+	{
+		gb_is_termination_requested = true;
+	}
 
-    // Setup OLED
-    u8x8_InitDisplay(&u8x8);
-    u8x8_SetPowerSave(&u8x8, 0);
-    u8x8_ClearDisplay(&u8x8);
-    u8x8_SetFont(&u8x8, u8x8_font_amstrad_cpc_extended_f);
+	// Initialize peripherals
+	if (!gb_is_termination_requested)
+	{
+		if (init_peripherals(PROJECT_ISU2_I2C) != 0)
+		{
+			gb_is_termination_requested = true;
+		}
+	}
 
-    snprintf(print_buffer, 16, ".. STARTING ..");
-    u8x8_DrawString(&u8x8, 0, 0, print_buffer);
+	// Initialize OLED
+	if (!gb_is_termination_requested)
+	{
+		u8x8_InitDisplay(gp_u8x8);
+		u8x8_SetPowerSave(gp_u8x8, 0);
+		u8x8_ClearDisplay(gp_u8x8);
+		u8x8_SetFont(gp_u8x8, u8x8_font_amstrad_cpc_extended_f);
 
+		snprintf(g_print_buffer, 16, ".. STARTING ..");
+		u8x8_DrawString(gp_u8x8, 0, 0, g_print_buffer);
+	}
 
+	// Main program
     if (!gb_is_termination_requested) 
     {
-        // Main application
-
-        ccs811_set_mode(p_ccs, CCS811_MODE_10S);
-        ccs811_enable_interrupt(p_ccs, true);
+		// Initialize CCS811 measurement mode and enable interrupt
+		ccs811_set_mode(gp_ccs, CCS811_MODE_10S);
+        ccs811_enable_interrupt(gp_ccs, true);
 
         Log_Debug("Waiting for event\n");
+
+		// Main program loop
         while (!gb_is_termination_requested)
         {
-            if (WaitForEventAndCallHandler(epoll_fd) != 0) 
+            // Handle timers
+			if (WaitForEventAndCallHandler(epoll_fd) != 0) 
             {
                 gb_is_termination_requested = true;
             }
@@ -171,8 +181,8 @@ main(void)
         Log_Debug("Not waiting for event anymore\n");
     }
 
-    u8x8_ClearDisplay(&u8x8);
-
+    // Clean up and shutdown
+	u8x8_ClearDisplay(gp_u8x8);
     close_peripherals_and_handlers();
 }
 
@@ -190,18 +200,15 @@ button1_press_handler(void)
 static void
 ccs811_interrupt_handler(void)
 {
-    double temperature;
-    double humidity;
-
     // Read temperature and humidity from HDC1000
-    temperature = hdc1000_get_temp(p_hdc);
-    humidity = hdc1000_get_humi(p_hdc);
+	double temperature = hdc1000_get_temp(gp_hdc);
+	double humidity = hdc1000_get_humi(gp_hdc);
 
     Log_Debug("Temperature [degC]: %f, Humidity [percRH]: %f\n",
         temperature, humidity);
 
     // Feed environmental data to CCS811
-    bool set_result = ccs811_set_environmental_data(p_ccs,
+    bool set_result = ccs811_set_environmental_data(gp_ccs,
         (float)temperature, (float)humidity);
 
     if (set_result)
@@ -210,7 +217,7 @@ ccs811_interrupt_handler(void)
         uint16_t eco2;
 
         // Reading CCS811 result will reset /INT pin.
-        if (!ccs811_get_results(p_ccs, &tvoc, &eco2, 0, 0)) 
+        if (!ccs811_get_results(gp_ccs, &tvoc, &eco2, 0, 0)) 
         {
             Log_Debug("Could not read measurement from CCS811.\n");
             gb_is_termination_requested = true;
@@ -221,14 +228,14 @@ ccs811_interrupt_handler(void)
                 tvoc, eco2);
 
             // Output data on OLED
-            snprintf(print_buffer, 16, "Tmp: %.1f C         ", temperature);
-            u8x8_DrawString(&u8x8, 0, 0, print_buffer);
-            snprintf(print_buffer, 16, "Hum: %.1f RH         ", humidity);
-            u8x8_DrawString(&u8x8, 0, 2, print_buffer);
-            snprintf(print_buffer, 16, "eCO2: %d ppm         ", eco2);
-            u8x8_DrawString(&u8x8, 0, 4, print_buffer);
-            snprintf(print_buffer, 16, "TVOC: %d ppb         ", tvoc);
-            u8x8_DrawString(&u8x8, 0, 6, print_buffer);
+            snprintf(g_print_buffer, 16, "Temp: %.1f C         ", temperature);
+            u8x8_DrawString(gp_u8x8, 0, 0, g_print_buffer);
+            snprintf(g_print_buffer, 16, "Humi: %.1f RH        ", humidity);
+            u8x8_DrawString(gp_u8x8, 0, 2, g_print_buffer);
+            snprintf(g_print_buffer, 16, "eCO2: %d ppm         ", eco2);
+            u8x8_DrawString(gp_u8x8, 0, 4, g_print_buffer);
+            snprintf(g_print_buffer, 16, "TVOC: %d ppb         ", tvoc);
+            u8x8_DrawString(gp_u8x8, 0, 6, g_print_buffer);
         }
     }
 }
@@ -358,8 +365,8 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Init HDC1000\n");
-        p_hdc = hdc1000_open(i2c_fd, HDC1000_I2C_ADDR, -1);
-        if (!p_hdc)
+        gp_hdc = hdc1000_open(i2c_fd, HDC1000_I2C_ADDR, -1);
+        if (!gp_hdc)
         {
             Log_Debug("ERROR: Cannot initialize HDC1000 sensor.\n");
             result = -1;
@@ -371,8 +378,8 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Init CCS811\n");
-        p_ccs = ccs811_open(i2c_fd, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
-        if (!p_ccs)
+        gp_ccs = ccs811_open(i2c_fd, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
+        if (!gp_ccs)
         {
             Log_Debug("ERROR: Cannot initialize CCS811 sensor.\n");
             result = -1;
@@ -392,12 +399,12 @@ init_peripherals(I2C_InterfaceId isu_id)
         }
     }
 
-    // Initialize 128x64 OLED
+    // Initialize 128x64 SSD1306 OLED
     if (result != -1)
     {
-        u8x8_Setup(&u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c, 
+        u8x8_Setup(gp_u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c,
             u8x8_byte_i2c, mt3620_gpio_and_delay_cb);
-        u8x8_SetI2CAddress(&u8x8, 0x3C);
+        u8x8_SetI2CAddress(gp_u8x8, 0x3C);
         set_oled_i2c_fd(i2c_fd);
     }
 
@@ -450,16 +457,16 @@ close_peripherals_and_handlers(void)
 {
     // Close CCS811 sensor
     Log_Debug("Close CCS811\n");
-    if (p_ccs)
+    if (gp_ccs)
     {
-        ccs811_close(p_ccs);
+        ccs811_close(gp_ccs);
     }
 
     // Close HDC1000 sensor
     Log_Debug("Close HDC1000\n");
-    if (p_hdc)
+    if (gp_hdc)
     {
-        hdc1000_close(p_hdc);
+        hdc1000_close(gp_hdc);
     }
 
     // Close I2C
