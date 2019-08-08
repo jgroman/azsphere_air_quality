@@ -22,6 +22,8 @@
 #include <applibs/gpio.h>
 #include <applibs/i2c.h>
 
+#include <azureiot/iothub_device_client_ll.h>
+
 // Import project hardware abstraction from project property 
 // "Target Hardware Definition Directory"
 #include <hw/project_hardware.h>
@@ -29,9 +31,23 @@
 // Using a single-thread event loop pattern based on Epoll and timerfd
 #include "epoll_timerfd_utilities.h"
 
+// Azure IoT utilities
+#include <lib_azure_iot.h>
+
+// This application Azure IoT configuration
+#include "azure_iot_settings.h"
+
+// Referenced libraries
 #include "LibCcs811.h"
 #include "LibHdc1000.h"
 #include "LibOledSsd1306.h"
+
+/*******************************************************************************
+* External variables
+*******************************************************************************/
+
+// TODO: Refactor to use function instead of extern var
+extern IOTHUB_DEVICE_CLIENT_LL_HANDLE iothubClientHandle;
 
 /*******************************************************************************
 * Forward declarations of private functions
@@ -124,12 +140,16 @@ static u8x8_t *gp_u8x8;                     // OLED control structure
 #define OLED_LINE_LENGTH    16
 static char g_print_buffer[OLED_LINE_LENGTH + 1];
 
+#if (defined(IOT_CENTRAL_APPLICATION) || defined(IOT_HUB_APPLICATION))
+static bool versionStringSent = false;
+#endif
+
 /*******************************************************************************
 * Function definitions
 *******************************************************************************/
 
 int 
-main(void)
+main(int argc, char *argv[])
 {
     gb_is_termination_requested = false;
 
@@ -177,6 +197,32 @@ main(void)
             {
                 gb_is_termination_requested = true;
             }
+
+#           if (defined(IOT_CENTRAL_APPLICATION) || defined(IOT_HUB_APPLICATION))
+            // Setup the IoT Hub client.
+            // Notes:
+            // - it is safe to call this function even if the client has already
+            //   been set up, as in this case it would have no effect
+            // - a failure to setup the client is a fatal error.
+            if (!AzureIoT_SetupClient(AZURE_CONNECTION_STRING)) 
+            {
+                Log_Debug("ERROR: Failed to set up IoT Hub client\n");
+                gb_is_termination_requested = true;
+            }
+#           endif 
+
+#           if (defined(IOT_CENTRAL_APPLICATION) || defined(IOT_HUB_APPLICATION))
+            if (iothubClientHandle != NULL && !versionStringSent) 
+            {
+                checkAndUpdateDeviceTwin("versionString", argv[1], TYPE_STRING, false);
+                versionStringSent = true;
+            }
+
+            // AzureIoT_DoPeriodicTasks() needs to be called frequently in order
+            // to keep active data flow to the Azure IoT Hub
+            AzureIoT_DoPeriodicTasks();
+#           endif
+
         }
         Log_Debug("Not waiting for event anymore\n");
     }

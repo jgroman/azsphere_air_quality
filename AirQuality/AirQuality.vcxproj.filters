@@ -30,5 +30,8 @@
     <ClInclude Include="epoll_timerfd_utilities.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="azure_iot_settings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

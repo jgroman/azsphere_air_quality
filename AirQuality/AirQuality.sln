@@ -11,6 +11,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LibHdc1000", "..\..\sphere_
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LibOledSsd1306", "..\..\sphere_lib_oled_ssd1306\LibOledSsd1306\LibOledSsd1306.vcxproj", "{735D9491-892C-4D08-87E8-EFA2174D8774}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_azure_iot", "..\..\azsphere_lib_azure_iot\lib_azure_iot\lib_azure_iot.vcxproj", "{DC47C542-2BD2-4E7A-A352-8081F44E5368}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_parson", "..\..\azsphere_lib_parson\lib_parson\lib_parson.vcxproj", "{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -33,6 +37,14 @@ Global
 		{735D9491-892C-4D08-87E8-EFA2174D8774}.Debug|ARM.Build.0 = Debug|ARM
 		{735D9491-892C-4D08-87E8-EFA2174D8774}.Release|ARM.ActiveCfg = Release|ARM
 		{735D9491-892C-4D08-87E8-EFA2174D8774}.Release|ARM.Build.0 = Release|ARM
+		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Debug|ARM.ActiveCfg = Debug|ARM
+		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Debug|ARM.Build.0 = Debug|ARM
+		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Release|ARM.ActiveCfg = Release|ARM
+		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Release|ARM.Build.0 = Release|ARM
+		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Debug|ARM.ActiveCfg = Debug|ARM
+		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Debug|ARM.Build.0 = Debug|ARM
+		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Release|ARM.ActiveCfg = Release|ARM
+		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Release|ARM.Build.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
