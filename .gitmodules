@@ -1,0 +1,9 @@
+[submodule "lib_u8g2"]
+	path = lib_u8g2
+	url = https://github.com/jgroman/azsphere_lib_u8g2.git
+[submodule "lib_ccs811"]
+	path = lib_ccs811
+	url = https://github.com/jgroman/azsphere_lib_ccs811.git
+[submodule "lib_hdc1000"]
+	path = lib_hdc1000
+	url = https://github.com/jgroman/azsphere_lib_hdc1000.git

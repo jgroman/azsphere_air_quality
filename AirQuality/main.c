@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #include "applibs_versions.h"   // API struct versions to use for applibs APIs
 #include <applibs/log.h>
@@ -38,9 +39,9 @@
 #include "azure_iot_settings.h"
 
 // Referenced libraries
-#include "LibCcs811.h"
-#include "LibHdc1000.h"
-#include "LibOledSsd1306.h"
+#include "lib_ccs811.h"
+#include "lib_hdc1000.h"
+#include "lib_u8g2.h"
 
 /*******************************************************************************
 * External variables
@@ -135,7 +136,7 @@ static EventData ccs811_int_event_data = {
 
 static hdc1000_t *gp_hdc;                   // HDC1000 sensor data pointer
 static ccs811_t *gp_ccs;                    // CCS811 sensor data pointer
-static u8x8_t *gp_u8x8;                     // OLED control structure
+static u8x8_t gp_u8x8;                     // OLED control structure
 
 #define OLED_LINE_LENGTH    16
 static char g_print_buffer[OLED_LINE_LENGTH + 1];
@@ -151,6 +152,7 @@ static bool versionStringSent = false;
 int 
 main(int argc, char *argv[])
 {
+
     gb_is_termination_requested = false;
 
 	// Initialize handlers
@@ -171,13 +173,13 @@ main(int argc, char *argv[])
 	// Initialize OLED
 	if (!gb_is_termination_requested)
 	{
-		u8x8_InitDisplay(gp_u8x8);
-		u8x8_SetPowerSave(gp_u8x8, 0);
-		u8x8_ClearDisplay(gp_u8x8);
-		u8x8_SetFont(gp_u8x8, u8x8_font_amstrad_cpc_extended_f);
+		u8x8_InitDisplay(&gp_u8x8);
+		u8x8_SetPowerSave(&gp_u8x8, 0);
+		u8x8_ClearDisplay(&gp_u8x8);
+		u8x8_SetFont(&gp_u8x8, u8x8_font_amstrad_cpc_extended_f);
 
 		snprintf(g_print_buffer, 16, ".. STARTING ..");
-		u8x8_DrawString(gp_u8x8, 0, 0, g_print_buffer);
+		u8x8_DrawString(&gp_u8x8, 0, 0, g_print_buffer);
 	}
 
 	// Main program
@@ -228,7 +230,7 @@ main(int argc, char *argv[])
     }
 
     // Clean up and shutdown
-	u8x8_ClearDisplay(gp_u8x8);
+	u8x8_ClearDisplay(&gp_u8x8);
     close_peripherals_and_handlers();
 }
 
@@ -275,13 +277,13 @@ ccs811_interrupt_handler(void)
 
             // Output data on OLED
             snprintf(g_print_buffer, 16, "Temp: %.1f C         ", temperature);
-            u8x8_DrawString(gp_u8x8, 0, 0, g_print_buffer);
+            u8x8_DrawString(&gp_u8x8, 0, 0, g_print_buffer);
             snprintf(g_print_buffer, 16, "Humi: %.1f RH        ", humidity);
-            u8x8_DrawString(gp_u8x8, 0, 2, g_print_buffer);
+            u8x8_DrawString(&gp_u8x8, 0, 2, g_print_buffer);
             snprintf(g_print_buffer, 16, "eCO2: %d ppm         ", eco2);
-            u8x8_DrawString(gp_u8x8, 0, 4, g_print_buffer);
+            u8x8_DrawString(&gp_u8x8, 0, 4, g_print_buffer);
             snprintf(g_print_buffer, 16, "TVOC: %d ppb         ", tvoc);
-            u8x8_DrawString(gp_u8x8, 0, 6, g_print_buffer);
+            u8x8_DrawString(&gp_u8x8, 0, 6, g_print_buffer);
         }
     }
 }
@@ -448,10 +450,10 @@ init_peripherals(I2C_InterfaceId isu_id)
     // Initialize 128x64 SSD1306 OLED
     if (result != -1)
     {
-        u8x8_Setup(gp_u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c,
-            u8x8_byte_i2c, mt3620_gpio_and_delay_cb);
-        u8x8_SetI2CAddress(gp_u8x8, 0x3C);
-        set_oled_i2c_fd(i2c_fd);
+        u8x8_Setup(&gp_u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c,
+            u8x8_byte_i2c, lib_u8g2_custom_cb);
+        u8x8_SetI2CAddress(&gp_u8x8, 0x3C);
+        lib_u8g2_set_i2c_fd(i2c_fd);
     }
 
     // Initialize development kit button GPIO

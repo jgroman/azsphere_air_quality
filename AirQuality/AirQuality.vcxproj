@@ -49,14 +49,14 @@
     <ProjectReference Include="..\..\azsphere_lib_azure_iot\lib_azure_iot\lib_azure_iot.vcxproj">
       <Project>{dc47c542-2bd2-4e7a-a352-8081f44e5368}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\sphere_lib_ccs811\LibCcs811\LibCcs811.vcxproj">
-      <Project>{5a4234ab-9a7f-4b2d-a1dc-168c4ccc8553}</Project>
+    <ProjectReference Include="..\lib_ccs811\lib_ccs811\lib_ccs811.vcxproj">
+      <Project>{5dceae9f-78b1-45e2-a27c-796922b9a1ea}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\sphere_lib_hdc1000\LibHdc1000\LibHdc1000.vcxproj">
-      <Project>{96ea0645-1bc5-448d-bfc5-01291ab70253}</Project>
+    <ProjectReference Include="..\lib_hdc1000\lib_hdc1000\lib_hdc1000.vcxproj">
+      <Project>{8804195e-8162-4cc1-827b-8c589c8feadf}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\sphere_lib_oled_ssd1306\LibOledSsd1306\LibOledSsd1306.vcxproj">
-      <Project>{735d9491-892c-4d08-87e8-efa2174d8774}</Project>
+    <ProjectReference Include="..\lib_u8g2\lib_u8g2\lib_u8g2.vcxproj">
+      <Project>{10f4b2dd-b608-4b0b-bf95-08214f5695a4}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
