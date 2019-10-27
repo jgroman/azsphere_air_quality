@@ -25,7 +25,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
     <UseDebugLibraries>true</UseDebugLibraries>
-    <TargetSysroot>2+Beta1905</TargetSysroot>
+    <TargetSysroot>3</TargetSysroot>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
     <UseDebugLibraries>false</UseDebugLibraries>
@@ -41,14 +41,13 @@
     <TargetHardwareDefinition>project_hardware.json</TargetHardwareDefinition>
   </PropertyGroup>
   <ItemGroup>
+    <ClCompile Include="azure_iot_utilities.c" />
     <ClCompile Include="epoll_timerfd_utilities.c" />
     <ClCompile Include="main.c" />
+    <ClCompile Include="parson.c" />
     <UpToDateCheckInput Include="app_manifest.json" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\azsphere_lib_azure_iot\lib_azure_iot\lib_azure_iot.vcxproj">
-      <Project>{dc47c542-2bd2-4e7a-a352-8081f44e5368}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\lib_ccs811\lib_ccs811\lib_ccs811.vcxproj">
       <Project>{5dceae9f-78b1-45e2-a27c-796922b9a1ea}</Project>
     </ProjectReference>
@@ -62,6 +61,9 @@
   <ItemGroup>
     <ClInclude Include="applibs_versions.h" />
     <ClInclude Include="azure_iot_settings.h" />
+    <ClInclude Include="azure_iot_utilities.h" />
+    <ClInclude Include="build_options.h" />
+    <ClInclude Include="connection_strings.h" />
     <ClInclude Include="epoll_timerfd_utilities.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

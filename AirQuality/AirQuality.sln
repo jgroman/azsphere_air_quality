@@ -5,15 +5,11 @@ VisualStudioVersion = 15.0.28307.757
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AirQuality", "AirQuality.vcxproj", "{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_azure_iot", "..\..\azsphere_lib_azure_iot\lib_azure_iot\lib_azure_iot.vcxproj", "{DC47C542-2BD2-4E7A-A352-8081F44E5368}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_parson", "..\..\azsphere_lib_parson\lib_parson\lib_parson.vcxproj", "{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_u8g2", "..\lib_u8g2\lib_u8g2\lib_u8g2.vcxproj", "{10F4B2DD-B608-4B0B-BF95-08214F5695A4}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_ccs811", "..\lib_ccs811\lib_ccs811\lib_ccs811.vcxproj", "{5DCEAE9F-78B1-45E2-A27C-796922B9A1EA}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_hdc1000", "..\lib_hdc1000\lib_hdc1000\lib_hdc1000.vcxproj", "{8804195E-8162-4CC1-827B-8C589C8FEADF}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lib_u8g2", "..\lib_u8g2\lib_u8g2\lib_u8g2.vcxproj", "{10F4B2DD-B608-4B0B-BF95-08214F5695A4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,18 +21,6 @@ Global
 		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Debug|ARM.Build.0 = Debug|ARM
 		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Release|ARM.ActiveCfg = Release|ARM
 		{1CE46B9C-7BEA-4C9B-A63C-854F5F657D0C}.Release|ARM.Build.0 = Release|ARM
-		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Debug|ARM.ActiveCfg = Debug|ARM
-		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Debug|ARM.Build.0 = Debug|ARM
-		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Release|ARM.ActiveCfg = Release|ARM
-		{DC47C542-2BD2-4E7A-A352-8081F44E5368}.Release|ARM.Build.0 = Release|ARM
-		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Debug|ARM.ActiveCfg = Debug|ARM
-		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Debug|ARM.Build.0 = Debug|ARM
-		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Release|ARM.ActiveCfg = Release|ARM
-		{2E68914E-4F6A-4D57-B9F9-8C1D32BF75FA}.Release|ARM.Build.0 = Release|ARM
-		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Debug|ARM.ActiveCfg = Debug|ARM
-		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Debug|ARM.Build.0 = Debug|ARM
-		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Release|ARM.ActiveCfg = Release|ARM
-		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Release|ARM.Build.0 = Release|ARM
 		{5DCEAE9F-78B1-45E2-A27C-796922B9A1EA}.Debug|ARM.ActiveCfg = Debug|ARM
 		{5DCEAE9F-78B1-45E2-A27C-796922B9A1EA}.Debug|ARM.Build.0 = Debug|ARM
 		{5DCEAE9F-78B1-45E2-A27C-796922B9A1EA}.Release|ARM.ActiveCfg = Release|ARM
@@ -45,6 +29,10 @@ Global
 		{8804195E-8162-4CC1-827B-8C589C8FEADF}.Debug|ARM.Build.0 = Debug|ARM
 		{8804195E-8162-4CC1-827B-8C589C8FEADF}.Release|ARM.ActiveCfg = Release|ARM
 		{8804195E-8162-4CC1-827B-8C589C8FEADF}.Release|ARM.Build.0 = Release|ARM
+		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Debug|ARM.ActiveCfg = Debug|ARM
+		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Debug|ARM.Build.0 = Debug|ARM
+		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Release|ARM.ActiveCfg = Release|ARM
+		{10F4B2DD-B608-4B0B-BF95-08214F5695A4}.Release|ARM.Build.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

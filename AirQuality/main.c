@@ -33,7 +33,7 @@
 #include "epoll_timerfd_utilities.h"
 
 // Azure IoT utilities
-#include <lib_azure_iot.h>
+#include "azure_iot_utilities.h"
 
 // This application Azure IoT configuration
 #include "azure_iot_settings.h"
@@ -42,6 +42,13 @@
 #include "lib_ccs811.h"
 #include "lib_hdc1000.h"
 #include "lib_u8g2.h"
+
+/*******************************************************************************
+*   Macros and #define Constants
+*******************************************************************************/
+
+#define I2C_ADDR_OLED       (0x3C)
+#define JSON_BUFFER_SIZE    128
 
 /*******************************************************************************
 * External variables
@@ -86,6 +93,17 @@ button_timer_event_handler(EventData *event_data);
 static void
 ccs811_int_timer_event_handler(EventData *event_data);
 
+/**
+ * @brief Timer event handler for uploading data to Azure
+ */
+static void
+upload_timer_event_handler(EventData *event_data);
+
+/**
+ * @brief Azure upload handler
+ */
+static void
+azure_upload_handler(void);
 
 /** @brief Initialize signal handlers.
  *
@@ -115,6 +133,9 @@ close_peripherals_and_handlers(void);
 * Global variables
 *******************************************************************************/
 
+// Period how often will be data uploaded to Azure
+static const struct timespec AZURE_UPLOAD_PERIOD = { 1 * 60, 0 };
+
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
 static int i2c_fd = -1;                     
@@ -134,9 +155,18 @@ static EventData ccs811_int_event_data = {
     .eventHandler = &ccs811_int_timer_event_handler
 };
 
+static int g_fd_poll_timer_upload = -1;
+static EventData g_event_data_poll_upload = {        // Azure upload Event data
+    .eventHandler = &upload_timer_event_handler
+};
+
 static hdc1000_t *gp_hdc;                   // HDC1000 sensor data pointer
 static ccs811_t *gp_ccs;                    // CCS811 sensor data pointer
-static u8x8_t gp_u8x8;                     // OLED control structure
+static u8x8_t gp_u8x8;                      // OLED control structure
+
+// Current data from sensors
+static double g_temperature, g_humidity;
+static int16_t g_eco2, g_tvoc;
 
 #define OLED_LINE_LENGTH    16
 static char g_print_buffer[OLED_LINE_LENGTH + 1];
@@ -152,7 +182,6 @@ static bool versionStringSent = false;
 int 
 main(int argc, char *argv[])
 {
-
     gb_is_termination_requested = false;
 
 	// Initialize handlers
@@ -173,8 +202,6 @@ main(int argc, char *argv[])
 	// Initialize OLED
 	if (!gb_is_termination_requested)
 	{
-		u8x8_InitDisplay(&gp_u8x8);
-		u8x8_SetPowerSave(&gp_u8x8, 0);
 		u8x8_ClearDisplay(&gp_u8x8);
 		u8x8_SetFont(&gp_u8x8, u8x8_font_amstrad_cpc_extended_f);
 
@@ -189,7 +216,7 @@ main(int argc, char *argv[])
 		ccs811_set_mode(gp_ccs, CCS811_MODE_10S);
         ccs811_enable_interrupt(gp_ccs, true);
 
-        Log_Debug("Waiting for event\n");
+        Log_Debug("Waiting for events\n");
 
 		// Main program loop
         while (!gb_is_termination_requested)
@@ -197,6 +224,7 @@ main(int argc, char *argv[])
             // Handle timers
 			if (WaitForEventAndCallHandler(epoll_fd) != 0) 
             {
+                // Timer event polling failed
                 gb_is_termination_requested = true;
             }
 
@@ -227,10 +255,11 @@ main(int argc, char *argv[])
 
         }
         Log_Debug("Not waiting for event anymore\n");
+
+        u8x8_ClearDisplay(&gp_u8x8);
     }
 
     // Clean up and shutdown
-	u8x8_ClearDisplay(&gp_u8x8);
     close_peripherals_and_handlers();
 }
 
@@ -249,40 +278,36 @@ static void
 ccs811_interrupt_handler(void)
 {
     // Read temperature and humidity from HDC1000
-	double temperature = hdc1000_get_temp(gp_hdc);
-	double humidity = hdc1000_get_humi(gp_hdc);
+	g_temperature = hdc1000_get_temp(gp_hdc);
+	g_humidity = hdc1000_get_humi(gp_hdc);
 
     Log_Debug("Temperature [degC]: %f, Humidity [percRH]: %f\n",
-        temperature, humidity);
+        g_temperature, g_humidity);
 
     // Feed environmental data to CCS811
     bool set_result = ccs811_set_environmental_data(gp_ccs,
-        (float)temperature, (float)humidity);
+        (float)g_temperature, (float)g_humidity);
 
     if (set_result)
     {
-        uint16_t tvoc;
-        uint16_t eco2;
-
         // Reading CCS811 result will reset /INT pin.
-        if (!ccs811_get_results(gp_ccs, &tvoc, &eco2, 0, 0)) 
+        if (!ccs811_get_results(gp_ccs, &g_tvoc, &g_eco2, 0, 0)) 
         {
             Log_Debug("Could not read measurement from CCS811.\n");
             gb_is_termination_requested = true;
         }
         else
         {
-            Log_Debug("CCS811 Sensor interrupt: TVOC %d ppb, eCO2 %d ppm\n",
-                tvoc, eco2);
+            Log_Debug("CCS811 Sensor: TVOC %d ppb, eCO2 %d ppm\n", g_tvoc, g_eco2);
 
             // Output data on OLED
-            snprintf(g_print_buffer, 16, "Temp: %.1f C         ", temperature);
+            snprintf(g_print_buffer, 16, "eCO2: %d ppm         ", g_eco2);
             u8x8_DrawString(&gp_u8x8, 0, 0, g_print_buffer);
-            snprintf(g_print_buffer, 16, "Humi: %.1f RH        ", humidity);
+            snprintf(g_print_buffer, 16, "TVOC: %d ppb         ", g_tvoc);
             u8x8_DrawString(&gp_u8x8, 0, 2, g_print_buffer);
-            snprintf(g_print_buffer, 16, "eCO2: %d ppm         ", eco2);
+            snprintf(g_print_buffer, 16, "Temp: %.1f C         ", g_temperature);
             u8x8_DrawString(&gp_u8x8, 0, 4, g_print_buffer);
-            snprintf(g_print_buffer, 16, "TVOC: %d ppb         ", tvoc);
+            snprintf(g_print_buffer, 16, "Humi: %.1f RH        ", g_humidity);
             u8x8_DrawString(&gp_u8x8, 0, 6, g_print_buffer);
         }
     }
@@ -352,7 +377,55 @@ ccs811_int_timer_event_handler(EventData *event_data)
         }
         ccs811_int_state = new_ccs811_int_state;
     }
+}
 
+static void
+upload_timer_event_handler(EventData *event_data)
+{
+    bool b_is_all_ok = true;
+
+    // Consume timer event
+    if (ConsumeTimerFdEvent(g_fd_poll_timer_upload) != 0)
+    {
+        // Failed to consume timer event
+        gb_is_termination_requested = true;
+        b_is_all_ok = false;
+    }
+
+    if (b_is_all_ok)
+    {
+        // Request measurement data from all sources
+        azure_upload_handler();
+    }
+
+    return;
+}
+
+static void
+azure_upload_handler(void)
+{
+#   if (defined(IOT_CENTRAL_APPLICATION) || defined(IOT_HUB_APPLICATION))
+    char *p_buffer_json;
+
+    if ((p_buffer_json = malloc(JSON_BUFFER_SIZE)) == NULL)
+    {
+        Log_Debug("ERROR: not enough memory for upload buffer.\n");
+    }
+    else
+    {
+        // Construct Azure upload message
+        snprintf(p_buffer_json, JSON_BUFFER_SIZE,
+            "{\"eco2\":\"%d\", \"tvoc\":\"%d\", "
+            "\"temperature\":\"%.1f\", \"humidity\":\"%.1f\"}",
+            g_eco2, g_tvoc, g_temperature, g_humidity);
+
+        Log_Debug("Uploading to Azure: %s\n", p_buffer_json);
+        AzureIoT_SendMessage(p_buffer_json);
+        free(p_buffer_json);
+    }
+#   endif
+
+    return;
 }
 
 static int
@@ -374,6 +447,20 @@ init_handlers(void)
     epoll_fd = CreateEpollFd();
     if (epoll_fd < 0) {
         result = -1;
+    }
+
+    // Create poll timer for Azure upload
+    if (result != -1)
+    {
+        g_fd_poll_timer_upload = CreateTimerFdAndAddToEpoll(epoll_fd,
+            &AZURE_UPLOAD_PERIOD, &g_event_data_poll_upload, EPOLLIN);
+        if (g_fd_poll_timer_upload < 0)
+        {
+            // Failed to create Azure upload poll timer
+            Log_Debug("ERROR: Could not create poll timer: %s (%d).\n",
+                strerror(errno), errno);
+            result = -1;
+        }
     }
 
     return result;
@@ -450,10 +537,20 @@ init_peripherals(I2C_InterfaceId isu_id)
     // Initialize 128x64 SSD1306 OLED
     if (result != -1)
     {
+        Log_Debug("Initializing OLED display.\n");
+
+        // Setup u8x8 display type and custom callbacks
         u8x8_Setup(&gp_u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c,
-            u8x8_byte_i2c, lib_u8g2_custom_cb);
-        u8x8_SetI2CAddress(&gp_u8x8, 0x3C);
-        lib_u8g2_set_i2c_fd(i2c_fd);
+            lib_u8g2_byte_i2c, lib_u8g2_custom_cb);
+
+        // Set OLED display I2C interface file descriptor and address
+        lib_u8g2_set_i2c(i2c_fd, I2C_ADDR_OLED);
+
+        // Initialize display descriptor
+        u8x8_InitDisplay(&gp_u8x8);
+
+        // Wake up display
+        u8x8_SetPowerSave(&gp_u8x8, 0);
     }
 
     // Initialize development kit button GPIO
