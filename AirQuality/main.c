@@ -47,8 +47,13 @@
 *   Macros and #define Constants
 *******************************************************************************/
 
+#define I2C_ISU             PROJECT_ISU2_I2C
 #define I2C_ADDR_OLED       (0x3C)
-#define JSON_BUFFER_SIZE    128
+
+#define OLED_ROTATION       U8G2_R1 // Display is rotated 90 degrees clockwise
+#define OLED_LINE_LENGTH    16      // Max number of chars on display line
+
+#define JSON_BUFFER_SIZE    128     // JSON buffer for Azure uplod
 
 /*******************************************************************************
 * External variables
@@ -72,23 +77,32 @@ extern IOTHUB_DEVICE_CLIENT_LL_HANDLE iothubClientHandle;
 static void
 termination_handler(int signal_number);
 
-/** @brief Button1 press handler
- *
+/**
+ * @brief Button1 press handler
  */
 static void
 button1_press_handler(void);
 
+/**
+ * @brief CCS811 DATA READY interrupt handler
+ */
 static void
 ccs811_interrupt_handler(void);
 
-/** @brief Timer event handler for polling button states
- *
+/**
+ * @brief Show measured values on OLED display
+ */
+static void
+display_measurements(void);
+
+/**
+ * @brief Timer event handler for polling button states
  */
 static void
 button_timer_event_handler(EventData *event_data);
 
-/** @brief Timer event handler for polling CCS811 interrupt pin
- *
+/**
+ * @brief Timer event handler for polling CCS811 interrupt pin
  */
 static void
 ccs811_int_timer_event_handler(EventData *event_data);
@@ -105,7 +119,8 @@ upload_timer_event_handler(EventData *event_data);
 static void
 azure_upload_handler(void);
 
-/** @brief Initialize signal handlers.
+/**
+ * @brief Initialize signal handlers.
  *
  * Set up SIGTERM termination handler.
  *
@@ -114,7 +129,8 @@ azure_upload_handler(void);
 static int
 init_handlers(void);
 
-/** @brief Initialize peripherals.
+/**
+ * @brief Initialize peripherals.
  *
  * Initialize all peripherals used by this project.
  *
@@ -124,7 +140,7 @@ static int
 init_peripherals(I2C_InterfaceId isu_id);
 
 /**
- *
+ * @brief Close all peripherals and handlers
  */
 static void
 close_peripherals_and_handlers(void);
@@ -138,37 +154,42 @@ static const struct timespec AZURE_UPLOAD_PERIOD = { 1 * 60, 0 };
 
 // Termination state flag
 static volatile sig_atomic_t gb_is_termination_requested = false;
-static int i2c_fd = -1;                     
-static int epoll_fd = -1;
 
-static int button_poll_timer_fd = -1;
-static int button1_gpio_fd = -1;
-static GPIO_Value_Type button1_state = GPIO_Value_High;
-static EventData button_event_data = {          // Event handler data
-    .eventHandler = &button_timer_event_handler // Populate only this field
+// File descriptors
+static int g_fd_epoll = -1;                 // Epoll
+static int g_fd_i2c = -1;                   // I2C
+static int g_fd_poll_timer_button = -1;     // Button1 poll timer
+static int g_fd_poll_timer_ccs811_int = -1; // CCS811 interrupt pin poll timer
+static int g_fd_poll_timer_upload = -1;     // Azure upload poll timer
+static int g_fd_gpio_button1 = -1;          // Button1 GPIO
+static int g_fd_gpio_ccs811_int = -1;       // CCS811 interrupt pin GPIO
+
+// Button1 state storage
+static GPIO_Value_Type g_state_button1 = GPIO_Value_High;
+
+// CCS811 interrupt pin state storage
+static GPIO_Value_Type g_state_ccs811_int = GPIO_Value_High;
+
+// Event handler data
+static EventData g_event_data_button = {        // Button state poll timer
+    .eventHandler = &button_timer_event_handler
 };
-
-static int ccs811_int_poll_timer_fd = -1;
-static int ccs811_int_gpio_fd = -1;
-static GPIO_Value_Type ccs811_int_state = GPIO_Value_High;
-static EventData ccs811_int_event_data = {
+static EventData g_event_data_ccs811_int = {    // CCS811 int pin poll timer
     .eventHandler = &ccs811_int_timer_event_handler
 };
-
-static int g_fd_poll_timer_upload = -1;
-static EventData g_event_data_poll_upload = {        // Azure upload Event data
+static EventData g_event_data_poll_upload = {   // Azure upload timer
     .eventHandler = &upload_timer_event_handler
 };
 
-static hdc1000_t *gp_hdc;                   // HDC1000 sensor data pointer
-static ccs811_t *gp_ccs;                    // CCS811 sensor data pointer
-static u8x8_t gp_u8x8;                      // OLED control structure
+static hdc1000_t *gp_hdc;       // HDC1000 sensor data pointer
+static ccs811_t *gp_ccs;        // CCS811 sensor data pointer
+static u8g2_t g_u8g2;           // OLED device descriptor for u8g2
 
 // Current data from sensors
 static double g_temperature, g_humidity;
 static int16_t g_eco2, g_tvoc;
 
-#define OLED_LINE_LENGTH    16
+// Print buffer for outputting data to display
 static char g_print_buffer[OLED_LINE_LENGTH + 1];
 
 #if (defined(IOT_CENTRAL_APPLICATION) || defined(IOT_HUB_APPLICATION))
@@ -187,42 +208,39 @@ main(int argc, char *argv[])
 	// Initialize handlers
 	if (init_handlers() != 0)
 	{
-		gb_is_termination_requested = true;
+        // Failed to initialize handlers
+        gb_is_termination_requested = true;
 	}
 
 	// Initialize peripherals
 	if (!gb_is_termination_requested)
 	{
-		if (init_peripherals(PROJECT_ISU2_I2C) != 0)
+		if (init_peripherals(I2C_ISU) != 0)
 		{
-			gb_is_termination_requested = true;
+            // Failed to initialize peripherals
+            gb_is_termination_requested = true;
 		}
-	}
-
-	// Initialize OLED
-	if (!gb_is_termination_requested)
-	{
-		u8x8_ClearDisplay(&gp_u8x8);
-		u8x8_SetFont(&gp_u8x8, u8x8_font_amstrad_cpc_extended_f);
-
-		snprintf(g_print_buffer, 16, ".. STARTING ..");
-		u8x8_DrawString(&gp_u8x8, 0, 0, g_print_buffer);
 	}
 
 	// Main program
     if (!gb_is_termination_requested) 
     {
-		// Initialize CCS811 measurement mode and enable interrupt
+        // All handlers and peripherals are initialized properly at this point
+
+        u8g2_ClearDisplay(&g_u8g2);
+
+        // Initialize CCS811 measurement mode and enable interrupt
 		ccs811_set_mode(gp_ccs, CCS811_MODE_10S);
         ccs811_enable_interrupt(gp_ccs, true);
 
-        Log_Debug("Waiting for events\n");
+        // Show measurement display while waiting for the first data
+        display_measurements();
 
 		// Main program loop
         while (!gb_is_termination_requested)
         {
             // Handle timers
-			if (WaitForEventAndCallHandler(epoll_fd) != 0) 
+			if (WaitForEventAndCallHandler(g_fd_epoll) != 0) 
             {
                 // Timer event polling failed
                 gb_is_termination_requested = true;
@@ -252,12 +270,10 @@ main(int argc, char *argv[])
             // to keep active data flow to the Azure IoT Hub
             AzureIoT_DoPeriodicTasks();
 #           endif
-
         }
-        Log_Debug("Not waiting for event anymore\n");
 
-        u8x8_ClearDisplay(&gp_u8x8);
-    }
+        u8g2_ClearDisplay(&g_u8g2);
+        }
 
     // Clean up and shutdown
     close_peripherals_and_handlers();
@@ -271,7 +287,7 @@ static void
 button1_press_handler(void)
 {
     Log_Debug("Button1 pressed.\n");
-    gb_is_termination_requested = true;
+    //gb_is_termination_requested = true;
 }
 
 static void
@@ -300,17 +316,62 @@ ccs811_interrupt_handler(void)
         {
             Log_Debug("CCS811 Sensor: TVOC %d ppb, eCO2 %d ppm\n", g_tvoc, g_eco2);
 
-            // Output data on OLED
-            snprintf(g_print_buffer, 16, "eCO2: %d ppm         ", g_eco2);
-            u8x8_DrawString(&gp_u8x8, 0, 0, g_print_buffer);
-            snprintf(g_print_buffer, 16, "TVOC: %d ppb         ", g_tvoc);
-            u8x8_DrawString(&gp_u8x8, 0, 2, g_print_buffer);
-            snprintf(g_print_buffer, 16, "Temp: %.1f C         ", g_temperature);
-            u8x8_DrawString(&gp_u8x8, 0, 4, g_print_buffer);
-            snprintf(g_print_buffer, 16, "Humi: %.1f RH        ", g_humidity);
-            u8x8_DrawString(&gp_u8x8, 0, 6, g_print_buffer);
+            // Output data on display
+            display_measurements();
         }
     }
+}
+
+static void
+display_measurements(void)
+{
+    u8g2_ClearBuffer(&g_u8g2);
+
+    //u8g2_ClearDisplay(&g_u8g2);
+    u8g2_SetFont(&g_u8g2, u8g2_font_helvB08_tf);
+
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 11, "eCO2 [ppm]");
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 56, "TVOC [ppb]");
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 101, "Humidity [%]");
+
+    u8g2_SetFont(&g_u8g2, u8g2_font_crox4tb_tn);
+
+    // Print eCO2 value
+    if (g_eco2 > 0)
+    {
+        sprintf(g_print_buffer, "%d", g_eco2);
+    }
+    else
+    {
+        sprintf(g_print_buffer, "...");
+    }
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 32, g_print_buffer);
+
+    // Print TVOC value
+    if (g_eco2 > 0)
+    {
+        // TVOC value is valid only after eCO2 measurement is valid
+        sprintf(g_print_buffer, "%d", g_tvoc);
+    }
+    else
+    {
+        sprintf(g_print_buffer, "...");
+    }
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 77, g_print_buffer);
+
+    // Print humidity value
+    if (g_humidity > 0)
+    {
+        sprintf(g_print_buffer, "%.1f", g_humidity);
+    }
+    else
+    {
+        sprintf(g_print_buffer, "...");
+    }
+    lib_u8g2_DrawCenteredStr(&g_u8g2, 123, g_print_buffer);
+
+    u8g2_SendBuffer(&g_u8g2);
+
 }
 
 static void
@@ -323,14 +384,14 @@ static void
 button_timer_event_handler(EventData *event_data)
 {
     // Consume timer event
-    if (ConsumeTimerFdEvent(button_poll_timer_fd) != 0) {
+    if (ConsumeTimerFdEvent(g_fd_poll_timer_button) != 0) {
         gb_is_termination_requested = true;
         return;
     }
 
     // Check for a button press
-    GPIO_Value_Type new_button1_state;
-    int result = GPIO_GetValue(button1_gpio_fd, &new_button1_state);
+    GPIO_Value_Type new_g_state_button1;
+    int result = GPIO_GetValue(g_fd_gpio_button1, &new_g_state_button1);
     if (result != 0) {
         Log_Debug("ERROR: Could not read button GPIO: %s (%d).\n", 
             strerror(errno), errno);
@@ -338,13 +399,13 @@ button_timer_event_handler(EventData *event_data)
         return;
     }
 
-    if (new_button1_state != button1_state)
+    if (new_g_state_button1 != g_state_button1)
     {
-        if (new_button1_state == GPIO_Value_Low)
+        if (new_g_state_button1 == GPIO_Value_Low)
         {
             button1_press_handler();
         }
-        button1_state = new_button1_state;
+        g_state_button1 = new_g_state_button1;
     }
 }
 
@@ -352,15 +413,15 @@ static void
 ccs811_int_timer_event_handler(EventData *event_data)
 {
     // Consume timer event
-    if (ConsumeTimerFdEvent(ccs811_int_poll_timer_fd) != 0) {
+    if (ConsumeTimerFdEvent(g_fd_poll_timer_ccs811_int) != 0) {
         gb_is_termination_requested = true;
         return;
     }
 
     // Check for interrupt signal state change
-    GPIO_Value_Type new_ccs811_int_state;
+    GPIO_Value_Type new_g_state_ccs811_int;
 
-    int result = GPIO_GetValue(ccs811_int_gpio_fd, &new_ccs811_int_state);
+    int result = GPIO_GetValue(g_fd_gpio_ccs811_int, &new_g_state_ccs811_int);
     if (result != 0) {
         Log_Debug("ERROR: Could not read CCS811 interrupt GPIO: %s (%d).\n",
             strerror(errno), errno);
@@ -368,14 +429,14 @@ ccs811_int_timer_event_handler(EventData *event_data)
         return;
     }
 
-    if (new_ccs811_int_state != ccs811_int_state)
+    if (new_g_state_ccs811_int != g_state_ccs811_int)
     {
-        if (new_ccs811_int_state == GPIO_Value_Low)
+        if (new_g_state_ccs811_int == GPIO_Value_Low)
         {
             // CCS811 /INT pin is asserted. New measurement is available.
             ccs811_interrupt_handler();
         }
-        ccs811_int_state = new_ccs811_int_state;
+        g_state_ccs811_int = new_g_state_ccs811_int;
     }
 }
 
@@ -444,15 +505,15 @@ init_handlers(void)
             __FUNCTION__, errno, strerror(errno));
     }
 
-    epoll_fd = CreateEpollFd();
-    if (epoll_fd < 0) {
+    g_fd_epoll = CreateEpollFd();
+    if (g_fd_epoll < 0) {
         result = -1;
     }
 
     // Create poll timer for Azure upload
     if (result != -1)
     {
-        g_fd_poll_timer_upload = CreateTimerFdAndAddToEpoll(epoll_fd,
+        g_fd_poll_timer_upload = CreateTimerFdAndAddToEpoll(g_fd_epoll,
             &AZURE_UPLOAD_PERIOD, &g_event_data_poll_upload, EPOLLIN);
         if (g_fd_poll_timer_upload < 0)
         {
@@ -473,21 +534,21 @@ init_peripherals(I2C_InterfaceId isu_id)
 
     // Initialize I2C
     Log_Debug("Init I2C\n");
-    i2c_fd = I2CMaster_Open(isu_id);
-    if (i2c_fd < 0) {
+    g_fd_i2c = I2CMaster_Open(isu_id);
+    if (g_fd_i2c < 0) {
         Log_Debug("ERROR: I2CMaster_Open: errno=%d (%s)\n", 
             errno, strerror(errno));
     }
     else
     {
-        result = I2CMaster_SetBusSpeed(i2c_fd, I2C_BUS_SPEED_STANDARD);
+        result = I2CMaster_SetBusSpeed(g_fd_i2c, I2C_BUS_SPEED_STANDARD);
         if (result != 0) {
             Log_Debug("ERROR: I2CMaster_SetBusSpeed: errno=%d (%s)\n", 
                 errno, strerror(errno));
         }
         else 
         {
-            result = I2CMaster_SetTimeout(i2c_fd, 100);
+            result = I2CMaster_SetTimeout(g_fd_i2c, 100);
             if (result != 0) {
                 Log_Debug("ERROR: I2CMaster_SetTimeout: errno=%d (%s)\n", 
                     errno, strerror(errno));
@@ -500,7 +561,7 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Init HDC1000\n");
-        gp_hdc = hdc1000_open(i2c_fd, HDC1000_I2C_ADDR, -1);
+        gp_hdc = hdc1000_open(g_fd_i2c, HDC1000_I2C_ADDR, -1);
         if (!gp_hdc)
         {
             Log_Debug("ERROR: Cannot initialize HDC1000 sensor.\n");
@@ -513,7 +574,7 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Init CCS811\n");
-        gp_ccs = ccs811_open(i2c_fd, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
+        gp_ccs = ccs811_open(g_fd_i2c, CCS811_I2C_ADDRESS_1, SK_SOCKET1_CS_GPIO);
         if (!gp_ccs)
         {
             Log_Debug("ERROR: Cannot initialize CCS811 sensor.\n");
@@ -526,8 +587,8 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Opening PROJECT_SOCKET12_INT as input.\n");
-        ccs811_int_gpio_fd = GPIO_OpenAsInput(PROJECT_SOCKET12_INT);
-        if (ccs811_int_gpio_fd < 0) {
+        g_fd_gpio_ccs811_int = GPIO_OpenAsInput(PROJECT_SOCKET12_INT);
+        if (g_fd_gpio_ccs811_int < 0) {
             Log_Debug("ERROR: Could not open GPIO: %s (%d).\n",
                 strerror(errno), errno);
             result = -1;
@@ -539,18 +600,18 @@ init_peripherals(I2C_InterfaceId isu_id)
     {
         Log_Debug("Initializing OLED display.\n");
 
-        // Setup u8x8 display type and custom callbacks
-        u8x8_Setup(&gp_u8x8, u8x8_d_ssd1306_128x64_noname, u8x8_cad_ssd13xx_i2c,
+        // Set lib_u8g2 I2C interface file descriptor and device address
+        lib_u8g2_set_i2c(g_fd_i2c, I2C_ADDR_OLED);
+
+        // Set display type and callbacks
+        u8g2_Setup_ssd1306_i2c_128x64_noname_f(&g_u8g2, OLED_ROTATION,
             lib_u8g2_byte_i2c, lib_u8g2_custom_cb);
 
-        // Set OLED display I2C interface file descriptor and address
-        lib_u8g2_set_i2c(i2c_fd, I2C_ADDR_OLED);
-
         // Initialize display descriptor
-        u8x8_InitDisplay(&gp_u8x8);
+        u8g2_InitDisplay(&g_u8g2);
 
         // Wake up display
-        u8x8_SetPowerSave(&gp_u8x8, 0);
+        u8g2_SetPowerSave(&g_u8g2, 0);
     }
 
     // Initialize development kit button GPIO
@@ -558,8 +619,8 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         Log_Debug("Opening PROJECT_BUTTON_1 as input.\n");
-        button1_gpio_fd = GPIO_OpenAsInput(PROJECT_BUTTON_1);
-        if (button1_gpio_fd < 0) {
+        g_fd_gpio_button1 = GPIO_OpenAsInput(PROJECT_BUTTON_1);
+        if (g_fd_gpio_button1 < 0) {
             Log_Debug("ERROR: Could not open button GPIO: %s (%d).\n",
                 strerror(errno), errno);
             result = -1;
@@ -570,9 +631,9 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         struct timespec button_press_check_period = { 0, 1000000 };
-        button_poll_timer_fd = CreateTimerFdAndAddToEpoll(epoll_fd,
-            &button_press_check_period, &button_event_data, EPOLLIN);
-        if (button_poll_timer_fd < 0)
+        g_fd_poll_timer_button = CreateTimerFdAndAddToEpoll(g_fd_epoll,
+            &button_press_check_period, &g_event_data_button, EPOLLIN);
+        if (g_fd_poll_timer_button < 0)
         {
             Log_Debug("ERROR: Could not create button poll timer: %s (%d).\n",
                 strerror(errno), errno);
@@ -584,9 +645,9 @@ init_peripherals(I2C_InterfaceId isu_id)
     if (result != -1)
     {
         struct timespec ccs811_int_check_period = { 0, 250000000 };
-        ccs811_int_poll_timer_fd = CreateTimerFdAndAddToEpoll(epoll_fd,
-            &ccs811_int_check_period, &ccs811_int_event_data, EPOLLIN);
-        if (ccs811_int_poll_timer_fd < 0)
+        g_fd_poll_timer_ccs811_int = CreateTimerFdAndAddToEpoll(g_fd_epoll,
+            &ccs811_int_check_period, &g_event_data_ccs811_int, EPOLLIN);
+        if (g_fd_poll_timer_ccs811_int < 0)
         {
             Log_Debug("ERROR: Could not create interrupt poll timer: %s (%d).\n",
                 strerror(errno), errno);
@@ -615,16 +676,16 @@ close_peripherals_and_handlers(void)
     }
 
     // Close I2C
-    CloseFdAndPrintError(i2c_fd, "I2C");
+    CloseFdAndPrintError(g_fd_i2c, "I2C");
 
     // Close CCS811 interrupt GPIO fd
-    CloseFdAndPrintError(ccs811_int_gpio_fd, "CSS811 INT GPIO");
+    CloseFdAndPrintError(g_fd_gpio_ccs811_int, "CSS811 INT GPIO");
 
     // Close button1 GPIO fd
-    CloseFdAndPrintError(button1_gpio_fd, "Button1 GPIO");
+    CloseFdAndPrintError(g_fd_gpio_button1, "Button1 GPIO");
 
     // Close Epoll fd
-    CloseFdAndPrintError(epoll_fd, "Epoll");
+    CloseFdAndPrintError(g_fd_epoll, "Epoll");
 }
 
 /* [] END OF FILE */
