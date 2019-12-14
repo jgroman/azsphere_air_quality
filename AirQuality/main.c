@@ -21,6 +21,8 @@
 #include "applibs_versions.h"   // API struct versions to use for applibs APIs
 #include <applibs/log.h>
 #include <applibs/gpio.h>
+
+#define I2C_STRUCTS_VERSION 1
 #include <applibs/i2c.h>
 
 #include <azureiot/iothub_device_client_ll.h>
